@@ -4,6 +4,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 
+import threading
 import requests
 
 from bs4 import BeautifulSoup, Comment, Doctype
@@ -18,6 +19,9 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
 
 
 class HabrProxyServer(BaseHTTPRequestHandler):
+    habr_protocol = "https://"
+    habr_host = "habrahabr.ru"
+
     def _html_entities(self, string):
         if '&' in string:
             return string
@@ -32,7 +36,8 @@ class HabrProxyServer(BaseHTTPRequestHandler):
         return s
 
     def _get_habr_data(self, path, method, headers=None):
-        response = requests.request(method, "https://habrahabr.ru{0}".format(path), allow_redirects=False, headers=headers)
+        response = requests.request(method, "{0}{1}{2}".format(self.habr_protocol, self.habr_host, path),
+                                    allow_redirects=False, headers=headers)
         return response
 
     def _set_headers(self, response):
@@ -60,13 +65,17 @@ class HabrProxyServer(BaseHTTPRequestHandler):
                 return
 
             headers = self.headers
-            headers["Host"] = "habrahabr.ru"
-            headers["Referer"] = "habrahabr.ru"
+            headers["Host"] = self.habr_host
+            headers["Referer"] = self.habr_host
             response = self._get_habr_data(self.path, self.command, headers=headers)
             encoding = response.encoding if response.encoding else "UTF-8"
             content = response.text
+            content = content.replace("document.location.href = url;",
+                                      'document.location.href = "http://127.0.0.1:9998";')  # If enter via mobile phone
             content = content.replace("https://habrahabr.ru", "http://127.0.0.1:9999")
             content = content.replace("http://habrahabr.ru", "http://127.0.0.1:9999")
+            content = content.replace("https://m.habrahabr.ru", "http://127.0.0.1:9998")
+            content = content.replace("http://m.habrahabr.ru", "http://127.0.0.1:9998")
             if "text/html" in response.headers["Content-Type"]:
                 content = BeautifulSoup(content, 'lxml')
                 strings = content.find_all(text=self._search_words)
@@ -86,17 +95,29 @@ class HabrProxyServer(BaseHTTPRequestHandler):
             return
 
 
-def run(server_class=ThreadedHTTPServer, handler_class=HabrProxyServer, port=9999):
+class HabrMobileProxyServer(HabrProxyServer):
+    habr_host = "m.habrahabr.ru"
+
+
+def run(server_class=ThreadedHTTPServer, handler_class=HabrProxyServer, handler_mobile_class=HabrMobileProxyServer,
+        port=9999, mobile_port=9998):
     server_address = ('', port)
+    mobile_server_address = ('', mobile_port)
     httpd = server_class(server_address, handler_class)
+    mobile_httpd = server_class(mobile_server_address, handler_mobile_class)
     print('Starting habr proxy at http://{0}:{1}'.format(server_address[0] if server_address[0] else "127.0.0.1", port))
-    httpd.serve_forever()
+    server_thread = threading.Thread(target=lambda server: server.serve_forever(), args=([httpd]))
+    server_thread.start()
+    print('Starting mobile habr proxy at http://{0}:{1}'.format(
+        mobile_server_address[0] if mobile_server_address[0] else "127.0.0.1", mobile_port))
+    mobile_server_thread = threading.Thread(target=lambda server: server.serve_forever(), args=([mobile_httpd]))
+    mobile_server_thread.start()
 
 
 if __name__ == "__main__":
     from sys import argv
 
     if len(argv) == 2:
-        run(port=int(argv[1]))
+        run(port=int(argv[1]), mobile_port=int(argv[2]))
     else:
         run()
