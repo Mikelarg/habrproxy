@@ -7,6 +7,7 @@ from socketserver import ThreadingMixIn
 import requests
 
 from bs4 import BeautifulSoup, Comment, Doctype
+from bs4.dammit import EntitySubstitution
 
 replace_regex = r"(?P<start>^|\s)(?P<word>\S{6})(?P<end>\s|$)"
 subst = r"\g<start>\g<word>™\g<end>"
@@ -17,6 +18,12 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
 
 
 class HabrProxyServer(BaseHTTPRequestHandler):
+    def _html_entities(self, string):
+        if '&' in string:
+            return string
+        else:
+            return EntitySubstitution.substitute_html(string)
+
     def _search_words(self, s):
         if s.parent.name in ('script', 'link', 'style', 'meta'):
             return False
@@ -66,7 +73,7 @@ class HabrProxyServer(BaseHTTPRequestHandler):
                     string.replaceWith(re.sub(replace_regex, subst, string, 0, re.DOTALL))
 
             self._set_headers(response)
-            self.wfile.write(content.encode('utf-8'))
+            self.wfile.write(content.prettify(encoding='utf-8', formatter=self._html_entities))
             self.connection.close()
         except socket.timeout as e:
             # a read or a write timed out.  Discard this connection
