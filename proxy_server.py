@@ -63,6 +63,7 @@ class HabrProxyServer(BaseHTTPRequestHandler):
             headers["Host"] = "habrahabr.ru"
             headers["Referer"] = "habrahabr.ru"
             response = self._get_habr_data(self.path, self.command, headers=headers)
+            encoding = response.encoding if response.encoding else "UTF-8"
             content = response.text
             content = content.replace("https://habrahabr.ru", "http://127.0.0.1:9999")
             content = content.replace("http://habrahabr.ru", "http://127.0.0.1:9999")
@@ -73,7 +74,10 @@ class HabrProxyServer(BaseHTTPRequestHandler):
                     string.replaceWith(re.sub(replace_regex, subst, string, 0, re.DOTALL))
 
             self._set_headers(response)
-            self.wfile.write(content.prettify(encoding='utf-8', formatter=self._html_entities))
+            if isinstance(content, BeautifulSoup):
+                self.wfile.write(content.prettify(encoding=encoding, formatter=self._html_entities))
+            elif content is not None:
+                self.wfile.write(content.encode(encoding))
             self.connection.close()
         except socket.timeout as e:
             # a read or a write timed out.  Discard this connection
