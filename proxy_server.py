@@ -17,14 +17,14 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
 
 
 class HabrProxyServer(BaseHTTPRequestHandler):
-    def _search_words(s):
+    def _search_words(self, s):
         if s.parent.name in ('script', 'link', 'style', 'meta'):
             return False
         if isinstance(s, Comment) or isinstance(s, Doctype):
             return False
         return s
 
-    def _get_habr_data(cls, path, method):
+    def _get_habr_data(self, path, method):
         response = requests.request(method, "https://habrahabr.ru{0}".format(path), allow_redirects=False)
         return response
 
@@ -51,13 +51,16 @@ class HabrProxyServer(BaseHTTPRequestHandler):
             if not self.parse_request():
                 # An error code has been sent, just exit
                 return
+
             response = self._get_habr_data(self.path, self.command)
             content = response.text
             content = content.replace("https://habrahabr.ru", "http://127.0.0.1:9999")
-            content = BeautifulSoup(content, 'lxml')
-            strings = content.find_all(text=self._search_words)
-            for string in strings:
-                string.replaceWith(re.sub(replace_regex, subst, string, 0, re.DOTALL))
+            if "text/html" in response.headers["Content-Type"]:
+                content = BeautifulSoup(content, 'lxml')
+                strings = content.find_all(text=self._search_words)
+                for string in strings:
+                    string.replaceWith(re.sub(replace_regex, subst, string, 0, re.DOTALL))
+
             self._set_headers(response)
             self.wfile.write(content.encode('utf-8'))
             self.wfile.flush()  # actually send the response if not already done.
