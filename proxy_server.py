@@ -24,14 +24,14 @@ class HabrProxyServer(BaseHTTPRequestHandler):
             return False
         return s
 
-    def _get_habr_data(self, path, method):
-        response = requests.request(method, "https://habrahabr.ru{0}".format(path), allow_redirects=False)
+    def _get_habr_data(self, path, method, headers=None):
+        response = requests.request(method, "https://habrahabr.ru{0}".format(path), allow_redirects=False, headers=headers)
         return response
 
     def _set_headers(self, response):
         self.send_response(response.status_code)
         for header, value in response.headers.items():
-            if not header == "Content-Encoding":
+            if header != "Content-Encoding" and header != "Connection":
                 self.send_header(header, value)
         self.end_headers()
         self.flush_headers()
@@ -52,9 +52,12 @@ class HabrProxyServer(BaseHTTPRequestHandler):
                 # An error code has been sent, just exit
                 return
 
-            response = self._get_habr_data(self.path, self.command)
+            headers = self.headers
+            headers["Host"] = "habrahabr.ru"
+            headers["Referer"] = "habrahabr.ru"
+            response = self._get_habr_data(self.path, self.command, headers=headers)
             content = response.text
-            content = content.replace("https://habrahabr.ru", "http://127.0.0.1:9999")
+            content = content.replace("http://habrahabr.ru", "http://127.0.0.1:9999")
             if "text/html" in response.headers["Content-Type"]:
                 content = BeautifulSoup(content, 'lxml')
                 strings = content.find_all(text=self._search_words)
@@ -63,7 +66,7 @@ class HabrProxyServer(BaseHTTPRequestHandler):
 
             self._set_headers(response)
             self.wfile.write(content.encode('utf-8'))
-            self.wfile.flush()  # actually send the response if not already done.
+            self.connection.close()
         except socket.timeout as e:
             # a read or a write timed out.  Discard this connection
             self.log_error("Request timed out: %r", e)
