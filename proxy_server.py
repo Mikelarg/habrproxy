@@ -57,6 +57,7 @@ class HabrProxyServer(BaseHTTPRequestHandler):
             headers["Referer"] = "habrahabr.ru"
             response = self._get_habr_data(self.path, self.command, headers=headers)
             content = response.text
+            content = content.replace("https://habrahabr.ru", "http://127.0.0.1:9999")
             content = content.replace("http://habrahabr.ru", "http://127.0.0.1:9999")
             if "text/html" in response.headers["Content-Type"]:
                 content = BeautifulSoup(content, 'lxml')
